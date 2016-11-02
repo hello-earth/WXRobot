@@ -53,7 +53,8 @@ def http_post(url, params):
     headers = copy.deepcopy(DEFAULT_HEADERS)
     headers['ContentType'] = 'application/json; charset=UTF-8'
     conn = httplib2.Http(timeout=TIMEOUT)
-    response, content = conn.request(uri=url, method='POST', headers=headers, body=json.dumps(params))
+    json_obj = (json.dumps(params, ensure_ascii=False).encode('utf-8'))
+    response, content = conn.request(uri=url, method='POST', headers=headers, body=json_obj)
     update_cookie(response)
     return content
 
@@ -178,13 +179,16 @@ class WeiXinRobot(object):
 
     def wx_init(self):
         url = self.base_uri + '/webwxinit?pass_ticket=%s&skey=%s&r=%s' % (self.pass_ticket, self.skey, int(time.time()))
-        content = http_post(url, {'BaseRequest': self.BaseRequest})
-        json_data = json.loads(content)
-        self.User = json_data['User']  # 我
+        try:
+            content = http_post(url, {'BaseRequest': self.BaseRequest})
+            json_data = json.loads(content)
+            self.User = json_data['User']  # 我
 
-        self.SyncKey = json_data['SyncKey']
-        self.sync_key = '|'.join([str(item['Key']) + '_' + str(item['Val']) for item in self.SyncKey['List']])
-        return json_data['BaseResponse']['Ret'] == 0
+            self.SyncKey = json_data['SyncKey']
+            self.sync_key = '|'.join([str(item['Key']) + '_' + str(item['Val']) for item in self.SyncKey['List']])
+            return json_data['BaseResponse']['Ret'] == 0
+        except:
+            return False
 
     def wx_notify(self):
         url = self.base_uri + '/webwxstatusnotify?lang=zh_CN&pass_ticket=%s' % self.pass_ticket
@@ -205,10 +209,13 @@ class WeiXinRobot(object):
     def wx_group_list(self):
         url = '%s/webwxgetcontact?pass_ticket=%s&skey=%s&r=%s' % (
             self.base_uri, self.pass_ticket, self.skey, int(time.time()))
-        content = http_get(url)
-        json_data = json.loads(content)
-        self.group_list = [member for member in json_data['MemberList'] if member['UserName'].startswith('@@')]
-        return True
+        try:
+            content = http_get(url)
+            json_data = json.loads(content)
+            self.group_list = [member for member in json_data['MemberList'] if member['UserName'].startswith('@@')]
+            return True
+        except:
+            return False
 
     def wx_group_members(self, group_list=None):
         group_list = group_list or [{'UserName': g['UserName'], 'ChatRoomId': ''} for g in self.group_list]
@@ -219,20 +226,23 @@ class WeiXinRobot(object):
             'Count': len(group_list),
             'List': group_list
         }
-        content = http_post(url, params)
-        json_data = json.loads(content)
-        old_group_list = [g['UserName'] for g in self.group_list]
-        for group in json_data['ContactList']:
-            self.group_member_dict[group['UserName']] = group['MemberList']
-            if group['UserName'] not in old_group_list:
-                del group['MemberList']
-                self.group_list.append(group)
+        try:
+            content = http_post(url, params)
+            json_data = json.loads(content)
+            old_group_list = [g['UserName'] for g in self.group_list]
+            for group in json_data['ContactList']:
+                self.group_member_dict[group['UserName']] = group['MemberList']
+                if group['UserName'] not in old_group_list:
+                    del group['MemberList']
+                    self.group_list.append(group)
 
-        if group_list:
-            # TODO: 同步粉丝信息到数据库
-            with open(ROBOT_INFO_FILE, 'wb') as fp:
-                fp.write(json.dumps(self.__json__()))
-        return (json_data['Count']==0 or json_data['BaseResponse']['Ret'] == 0)
+            if group_list:
+                # TODO: 同步粉丝信息到数据库
+                with open(ROBOT_INFO_FILE, 'wb') as fp:
+                    fp.write(json.dumps(self.__json__()))
+            return (json_data['Count']==0 or json_data['BaseResponse']['Ret'] == 0)
+        except:
+            return False
 
     def sync_check(self, host):
         params = {
@@ -342,7 +352,7 @@ class WeiXinRobot(object):
                 # group_id, fans_id, fans_name, current_time
                 if msg_type == 1:  # 消息
                     self._echo(u'%s: %s' % (fans_name, content), '\n')
-                    self.wx_sendmsg('<msg><appmsg appid="" sdkver="0"><title>抢红包活动</title><des>分享了浦发红包，快来开红包，天天享鸿运！</des><action></action><type>5</type><showtype>0</showtype><mediatagname></mediatagname><messageext></messageext><messageaction></messageaction><content></content><contentattr>0</contentattr><url>https://weixin.spdbccc.com.cn/spdbcccWeChatPageRedPackets/StatusDistrubServlet.do?packetId=PVCDBJ41DQ8417CY463280469-14776534040007d9e6b91&amp;amp;status=share&amp;amp;noCheck=1</url><lowurl></lowurl><dataurl></dataurl><lowdataurl></lowdataurl><appattach><totallen>0</totallen><attachid></attachid><emoticonmd5></emoticonmd5><fileext></fileext><cdnthumburl>304d02010004463044020100020466a4081002033d0af70204768e1e6f020458192f8e0422313530313834303736334063686174726f6f6d323838345f313437383034353537390201000201000400</cdnthumburl><cdnthumbmd5></cdnthumbmd5><cdnthumblength>6576</cdnthumblength><cdnthumbwidth>160</cdnthumbwidth><cdnthumbheight>160</cdnthumbheight><cdnthumbaeskey>37313966666639663966363565376139</cdnthumbaeskey><aeskey>37313966666639663966363565376139</aeskey><encryver>0</encryver></appattach><extinfo></extinfo><sourceusername>spdbccc4008208788</sourceusername><sourcedisplayname>浦发银行信用卡</sourcedisplayname><commenturl></commenturl><thumburl>https://weixin.spdbccc.com.cn/spdbcccWeChatPageRedPackets/redpacket_opt/images/skin1/packetShare.PNG</thumburl><md5></md5><statextstr></statextstr></appmsg></msg>',group_id)
+                    self.wx_sendmsg(content,group_id)
                 elif msg_type == 49:  # 分享
                     self._echo(u'%s: %s' % (fans_name, content), '\n')
                     self.wx_sendmsg('<appmsg appid="" sdkver="0"><title>抢红包活动</title><des>分享了浦发红包，快来开红包，天天享鸿运！</des><action></action><type>5</type><showtype>0</showtype><mediatagname></mediatagname><messageext></messageext><messageaction></messageaction><content></content><contentattr>0</contentattr><url>https://weixin.spdbccc.com.cn/spdbcccWeChatPageRedPackets/StatusDistrubServlet.do?packetId=PVCDBJ41DQ8417CY463280469-14776534040007d9e6b91&amp;amp;status=share&amp;amp;noCheck=1</url><lowurl></lowurl><dataurl></dataurl><lowdataurl></lowdataurl><appattach><totallen>0</totallen><attachid></attachid><emoticonmd5></emoticonmd5><fileext></fileext><cdnthumburl>304d02010004463044020100020466a4081002033d0af70204768e1e6f020458192f8e0422313530313834303736334063686174726f6f6d323838345f313437383034353537390201000201000400</cdnthumburl><cdnthumbmd5></cdnthumbmd5><cdnthumblength>6576</cdnthumblength><cdnthumbwidth>160</cdnthumbwidth><cdnthumbheight>160</cdnthumbheight><cdnthumbaeskey>37313966666639663966363565376139</cdnthumbaeskey><aeskey>37313966666639663966363565376139</aeskey><encryver>0</encryver></appattach><extinfo></extinfo><sourceusername>spdbccc4008208788</sourceusername><sourcedisplayname>浦发银行信用卡</sourcedisplayname><commenturl></commenturl><thumburl>https://weixin.spdbccc.com.cn/spdbcccWeChatPageRedPackets/redpacket_opt/images/skin1/packetShare.PNG</thumburl><md5></md5><statextstr></statextstr></appmsg>',group_id)
@@ -364,7 +374,7 @@ class WeiXinRobot(object):
     def wx_sendmsg(self,content,ToUserName):
         id = int(time.time());
         msg = {"Type": 1, "Content": content,"ClientMsgId":id,"FromUserName":self.User['UserName'],\
-               "ToUserName":ToUserName,"LocalID":id,"Type":1}
+               "ToUserName":ToUserName,"LocalID":id}
         url = self.base_uri + '/webwxsendmsg'#cgi-bin/mmwebwx-bin
         params = {
             'BaseRequest': self.BaseRequest,
