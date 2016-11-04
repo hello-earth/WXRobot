@@ -6,7 +6,6 @@ python wx_robot.py
 2.机器人运行期间不能再登录桌面微信或者web网页微信，这样机器人也会被强制下线
 3.以上操作都会导致本地的cookie和其他信息失效，如果是实验阶段可以清除cookie.txt内容，删除robot.json文件，然后启动
 """
-import copy
 import re
 import json
 import os
@@ -15,11 +14,13 @@ import time
 import random
 import urllib
 import xml.dom.minidom
-import httplib2
 from PIL import Image
+import httplib2
+import MysqlDBHelper
 
-ROBOT_INFO_FILE = os.path.join(os.getcwd(), 'robot.json')
-ROBOT_COOKIE_FILE = os.path.join(os.getcwd(), 'cookie.txt')
+ROBOT_INFO_FILE = os.path.join(os.getcwd(), '.\\config\\robot.json')
+ROBOT_COOKIE_FILE = os.path.join(os.getcwd(), '.\\config\\cookie.txt')
+ROBOT_QRPIC_FILE = os.path.join(os.getcwd(), '.\\config\\qrcode.jpg')
 
 TIMEOUT = 30
 WX_URLS = {
@@ -27,7 +28,8 @@ WX_URLS = {
     'qrcode': 'https://login.weixin.qq.com/qrcode/%s',
     'login': 'https://login.weixin.qq.com/cgi-bin/mmwebwx-bin/login?tip=%s&uuid=%s&_=%s',
 }
-DEFAULT_HEADERS = {
+
+GET_DEFAULT_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:18.0) Gecko/20100101 Firefox/18.0',
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
     'Accept-Language': 'en-us,en;q=0.5',
@@ -37,33 +39,43 @@ DEFAULT_HEADERS = {
     'Connection': 'keep-alive',
     'Cache-Control': 'max-age=0'
 }
-
+POST_DEFAULT_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:18.0) Gecko/20100101 Firefox/18.0',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language': 'en-us,en;q=0.5',
+    'Accept-Encoding': 'gzip',
+    'Accept-Charset': 'ISO-8859-1,utf-8;q=0.7,*;q=0.7',
+    'Keep-Alive': '115',
+    'Connection': 'keep-alive',
+    'Cache-Control': 'max-age=0',
+    'ContentType': 'application/json; charset=UTF-8'
+}
 
 def update_cookie(response):
-    global DEFAULT_HEADERS
+    global GET_DEFAULT_HEADERS
+    global POST_DEFAULT_HEADERS
     if response.get('set-cookie'):
         cookie = re.sub(r'Domain.*?GMT,?', '', response['set-cookie'])
-        DEFAULT_HEADERS['Cookie'] = cookie
+        GET_DEFAULT_HEADERS['Cookie'] = cookie
+        POST_DEFAULT_HEADERS['Cookie'] = cookie
         with open(ROBOT_COOKIE_FILE, 'wb') as fp:
-            fp.write(DEFAULT_HEADERS['Cookie'])
+            fp.write(GET_DEFAULT_HEADERS['Cookie'])
 
 
 def http_post(url, params):
-    global DEFAULT_HEADERS
-    headers = copy.deepcopy(DEFAULT_HEADERS)
-    headers['ContentType'] = 'application/json; charset=UTF-8'
     conn = httplib2.Http(timeout=TIMEOUT)
-    json_obj = (json.dumps(params, ensure_ascii=False).encode('utf-8'))
-    response, content = conn.request(uri=url, method='POST', headers=headers, body=json_obj)
+    json_obj = json.dumps(params, ensure_ascii = False).encode('u8')
+    response, content = conn.request(uri=url, method='POST', headers=POST_DEFAULT_HEADERS, body=json_obj)
     update_cookie(response)
     return content
 
 
 def http_get(url):
     conn = httplib2.Http(timeout=TIMEOUT)
-    response, content = conn.request(uri=url, method='GET', body=None, headers=DEFAULT_HEADERS)
+    response, content = conn.request(uri=url, method='GET', body=None, headers=GET_DEFAULT_HEADERS)
     update_cookie(response)
     return content
+
 
 
 def get_icon(self, user_id):
@@ -76,12 +88,12 @@ def get_icon(self, user_id):
 
 
 class WeiXinRobot(object):
-    def __init__(self):
+    def __init__(self,dbHelper):
         self.deviceId = 'e' + repr(random.random())[2:17]
         self.uuid = ''
         self.redirect_uri = ''
         self.base_uri = ''
-
+        self.dbHelper=dbHelper
         self.skey = ''
         self.sid = ''
         self.uin = ''
@@ -131,7 +143,7 @@ class WeiXinRobot(object):
         return False
 
     def gen_qr_code(self):
-        qr_code_path = os.path.join(os.getcwd(), 'qrcode.jpg')
+        qr_code_path = os.path.join(os.getcwd(), ROBOT_QRPIC_FILE)
         content = http_get(WX_URLS['qrcode'] % self.uuid)
         with open(qr_code_path, 'wb') as f:
             f.write(content)
@@ -179,16 +191,12 @@ class WeiXinRobot(object):
 
     def wx_init(self):
         url = self.base_uri + '/webwxinit?pass_ticket=%s&skey=%s&r=%s' % (self.pass_ticket, self.skey, int(time.time()))
-        try:
-            content = http_post(url, {'BaseRequest': self.BaseRequest})
-            json_data = json.loads(content)
-            self.User = json_data['User']  # 我
-
-            self.SyncKey = json_data['SyncKey']
-            self.sync_key = '|'.join([str(item['Key']) + '_' + str(item['Val']) for item in self.SyncKey['List']])
-            return json_data['BaseResponse']['Ret'] == 0
-        except:
-            return False
+        content = http_post(url, {'BaseRequest': self.BaseRequest})
+        json_data = json.loads(content)
+        self.User = json_data['User']  # 我
+        self.SyncKey = json_data['SyncKey']
+        self.sync_key = '|'.join([str(item['Key']) + '_' + str(item['Val']) for item in self.SyncKey['List']])
+        return json_data['BaseResponse']['Ret'] == 0
 
     def wx_notify(self):
         url = self.base_uri + '/webwxstatusnotify?lang=zh_CN&pass_ticket=%s' % self.pass_ticket
@@ -260,6 +268,8 @@ class WeiXinRobot(object):
         if(matches):
             return matches.group(1), matches.group(2)
         else:
+            print 'get messge fail'
+            print content
             return -1,-1
 
     def sync(self):
@@ -317,7 +327,7 @@ class WeiXinRobot(object):
         #print json_data
         for message in json_data['AddMsgList']:
             msg_type = message['MsgType']
-            content = message['Content'].replace('&lt;', '<').replace('&gt;', '>')
+            content = message['Content'].replace('&lt;', '<').replace('&gt;', '>').replace('amp;','').replace(' ','')
             group_id = message['FromUserName']
             if group_id.startswith('@@'): #群消息
                 group_name = self.get_nickname(group_id)
@@ -351,11 +361,15 @@ class WeiXinRobot(object):
                 fans_name = self.get_nickname(group_id)
                 # group_id, fans_id, fans_name, current_time
                 if msg_type == 1:  # 消息
-                    self._echo(u'%s: %s' % (fans_name, content), '\n')
-                    self.wx_sendmsg(content,group_id)
+                    self._echo(u'%s,%s: %s' % (fans_name, group_id, u"我还没有学会这个技能\n"+content), '\n')
+                    self.wx_sendmsg(u"我还没有学会这个技能\n"+content,group_id)
                 elif msg_type == 49:  # 分享
-                    self._echo(u'%s: %s' % (fans_name, content), '\n')
-                    self.wx_sendmsg('<appmsg appid="" sdkver="0"><title>抢红包活动</title><des>分享了浦发红包，快来开红包，天天享鸿运！</des><action></action><type>5</type><showtype>0</showtype><mediatagname></mediatagname><messageext></messageext><messageaction></messageaction><content></content><contentattr>0</contentattr><url>https://weixin.spdbccc.com.cn/spdbcccWeChatPageRedPackets/StatusDistrubServlet.do?packetId=PVCDBJ41DQ8417CY463280469-14776534040007d9e6b91&amp;amp;status=share&amp;amp;noCheck=1</url><lowurl></lowurl><dataurl></dataurl><lowdataurl></lowdataurl><appattach><totallen>0</totallen><attachid></attachid><emoticonmd5></emoticonmd5><fileext></fileext><cdnthumburl>304d02010004463044020100020466a4081002033d0af70204768e1e6f020458192f8e0422313530313834303736334063686174726f6f6d323838345f313437383034353537390201000201000400</cdnthumburl><cdnthumbmd5></cdnthumbmd5><cdnthumblength>6576</cdnthumblength><cdnthumbwidth>160</cdnthumbwidth><cdnthumbheight>160</cdnthumbheight><cdnthumbaeskey>37313966666639663966363565376139</cdnthumbaeskey><aeskey>37313966666639663966363565376139</aeskey><encryver>0</encryver></appattach><extinfo></extinfo><sourceusername>spdbccc4008208788</sourceusername><sourcedisplayname>浦发银行信用卡</sourcedisplayname><commenturl></commenturl><thumburl>https://weixin.spdbccc.com.cn/spdbcccWeChatPageRedPackets/redpacket_opt/images/skin1/packetShare.PNG</thumburl><md5></md5><statextstr></statextstr></appmsg>',group_id)
+                    self._echo(u'%s,%s: %s' % (fans_name, group_id, content), '\n')
+                    rpr = re.compile('<url>(.*?)</url>'.decode('u8')).findall(content)[0]
+                    if(rpr and self.dbHelper):
+                        sql = "insert into spd_wxprp(id,url,provider,usetimes,time) values(NULL,'%s','%s','0','%s')"%(rpr,fans_name,time.strftime('%Y-%m-%d %H:%M:%S',time.localtime(time.time())))
+                        self.dbHelper.runSql(sql)
+                    self.wx_sendmsg(content,group_id)
                 elif msg_type == 3:  # 图片
                     self._echo(u'%s: %s' % (fans_name, u'图片'), '\n')
                 elif msg_type == 34:  # 语音
@@ -381,9 +395,13 @@ class WeiXinRobot(object):
             'Msg': msg,
             'Scene': 0
         }
-        content = http_post(url, params)
-        json_data = json.loads(content)
-        print  json_data['MsgID']!=""
+        try:
+            content = http_post(url, params)
+            json_data = json.loads(content)
+            print  json_data['MsgID']!=""
+        except:
+            print content
+            print "send message fail"
 
 
     def wx_sync_loop(self):
@@ -396,16 +414,28 @@ class WeiXinRobot(object):
                 elif selector == '2':  # 有新消息
                     self.handle_message(self.wx_message_sync())
 
+    def __del__(self):
+        del self.dbHelper
+        if os.path.exist(ROBOT_INFO_FILE):
+            os.remove(ROBOT_INFO_FILE)
+        if os.path.exist(ROBOT_COOKIE_FILE):
+            os.remove(ROBOT_COOKIE_FILE)
+        if os.path.exist(ROBOT_QRPIC_FILE):
+            os.remove(ROBOT_QRPIC_FILE)
+
     def main(self):
         global ROBOT_COOKIE_FILE, ROBOT_INFO_FILE, DEFAULT_HEADERS
         self._echo(u'微信机器人启动：\n')
-        if os.path.exists(ROBOT_INFO_FILE):  # 从文件加载初始化信息
+
+        if 1==2:
+        # if os.path.exists(ROBOT_INFO_FILE):  # 从文件加载初始化信息
             with open(ROBOT_INFO_FILE) as fp:
                 json_data = json.loads(fp.read())
                 for field, value in json_data.items():
                     self.__dict__[field] = value
             with open(ROBOT_COOKIE_FILE) as fp:
-                DEFAULT_HEADERS['Cookie'] = fp.read()
+                GET_DEFAULT_HEADERS['Cookie'] = fp.read()
+                POST_DEFAULT_HEADERS['Cookie'] = fp.read()
         else:
             self._run(u'[*] 正在获取 uuid ... ', self.get_uuid)
             self._run(u'[*] 正在获取二维码 ... ', self.gen_qr_code)
@@ -420,6 +450,7 @@ class WeiXinRobot(object):
                 fp.write(json.dumps(self.__json__()))
 
         self._echo(u'微信机器人成功启动！', '\n')
+
         try:
             self.wx_sync_loop()
         except KeyboardInterrupt:
@@ -428,4 +459,7 @@ class WeiXinRobot(object):
 
 
 if __name__ == '__main__':
-    WeiXinRobot().main()
+    dbhp = MysqlDBHelper.MysqlDBHelper()
+    robot = WeiXinRobot(dbhp)
+    robot.main()
+    del robot
