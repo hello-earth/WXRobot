@@ -12,17 +12,17 @@ import os
 import sys
 import time
 import random
-import urllib
+import urllib,atexit
 import xml.dom.minidom
 from PIL import Image
-import httplib2
+import httplib2,threading
 import MysqlDBHelper
 
 ROBOT_INFO_FILE = os.path.join(os.getcwd(), '.\\config\\robot.json')
 ROBOT_COOKIE_FILE = os.path.join(os.getcwd(), '.\\config\\cookie.txt')
 ROBOT_QRPIC_FILE = os.path.join(os.getcwd(), '.\\config\\qrcode.jpg')
 
-TIMEOUT = 30
+TIMEOUT = 50
 WX_URLS = {
     'jslogin': 'https://login.weixin.qq.com/jslogin?%s',
     'qrcode': 'https://login.weixin.qq.com/qrcode/%s',
@@ -30,24 +30,18 @@ WX_URLS = {
 }
 
 GET_DEFAULT_HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:18.0) Gecko/20100101 Firefox/18.0',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-    'Accept-Language': 'en-us,en;q=0.5',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.71 Safari/537.36',
+    'Accept': '*/*',
+    'Accept-Language': 'gzip, deflate, sdch, br',
     'Accept-Encoding': 'gzip',
-    'Accept-Charset': 'ISO-8859-1,utf-8;q=0.7,*;q=0.7',
-    'Keep-Alive': '115',
     'Connection': 'keep-alive',
-    'Cache-Control': 'max-age=0'
 }
 POST_DEFAULT_HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:18.0) Gecko/20100101 Firefox/18.0',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-    'Accept-Language': 'en-us,en;q=0.5',
-    'Accept-Encoding': 'gzip',
-    'Accept-Charset': 'ISO-8859-1,utf-8;q=0.7,*;q=0.7',
-    'Keep-Alive': '115',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.71 Safari/537.36',
+    'Accept': 'application/json, text/plain, */*',
+    'Accept-Language': 'zh-CN,zh;q=0.8',
+    'Accept-Encoding': 'gzip, deflate, br',
     'Connection': 'keep-alive',
-    'Cache-Control': 'max-age=0',
     'ContentType': 'application/json; charset=UTF-8'
 }
 
@@ -253,6 +247,8 @@ class WeiXinRobot(object):
             return False
 
     def sync_check(self, host):
+        print "i am alive %s"%time.strftime('%Y-%m-%d %H:%M:%S',time.localtime(time.time()))
+
         params = {
             'r': int(time.time()),
             'sid': self.sid,
@@ -262,15 +258,27 @@ class WeiXinRobot(object):
             'synckey': self.sync_key,
             '_': int(time.time()),
         }
-        url = 'https://%s/cgi-bin/mmwebwx-bin/synccheck?%s' % (host, urllib.urlencode(params))
-        content = http_get(url)
-        matches = re.search(r'window.synccheck=\{retcode:"(\d+)",selector:"(\d+)"\}', content)
-        if(matches):
-            return matches.group(1), matches.group(2)
-        else:
-            print 'get messge fail'
-            print content
-            return -1,-1
+        try:
+            url = 'https://%s/cgi-bin/mmwebwx-bin/synccheck?%s' % (host, urllib.urlencode(params))
+            content = http_get(url)
+            matches = re.search(r'window.synccheck=\{retcode:"(\d+)",selector:"(\d+)"\}', content)
+            if(matches):
+                return matches.group(1), matches.group(2)
+            else:
+                print 'get messge fail'
+                if(content==""):
+                    print 'get message info fail, waniting 5s.'
+                    time.sleep(5)
+                    return '0','0'
+                else:
+                    print content
+                    return '-1','-1'
+        except Exception,e:
+            if(e.message.find("httplib2.CertificateHostnameMismatch")):
+                print 'session have expired.'
+                return '-1', '-1'
+            else:
+                raise e
 
     def sync(self):
         sync_host_list = [
@@ -283,11 +291,12 @@ class WeiXinRobot(object):
             'webpush.wechatapp.com'
         ]
         for host in sync_host_list:
-            self.sync_check(host)
             retcode, selector = self.sync_check(host)
             if retcode == '0':
                 self.sync_host = host
                 return True
+        return  False
+
 
     def wx_message_sync(self):
         url = self.base_uri + '/webwxsync?sid=%s&skey=%s&pass_ticket=%s' % (self.sid, self.skey, self.pass_ticket)
@@ -359,10 +368,12 @@ class WeiXinRobot(object):
                     self._echo(u'%s@%s: 消息类型<%s>' % (fans_name, group_name, str(msg_type)), '\n')
             elif group_id.startswith('@'):  # 个人消息
                 fans_name = self.get_nickname(group_id)
+                if(fans_name==''):
+                    return
                 # group_id, fans_id, fans_name, current_time
                 if msg_type == 1:  # 消息
-                    self._echo(u'%s,%s: %s' % (fans_name, group_id, u"我还没有学会这个技能\n"+content), '\n')
-                    self.wx_sendmsg(u"我还没有学会这个技能\n"+content,group_id)
+                    self._echo(u'%s,%s: %s' % (fans_name, group_id, content), '\n')
+                    self.wx_sendmsg(content,group_id)
                 elif msg_type == 49:  # 分享
                     self._echo(u'%s,%s: %s' % (fans_name, group_id, content), '\n')
                     rpr = re.compile('<url>(.*?)</url>'.decode('u8')).findall(content)[0]
@@ -383,11 +394,11 @@ class WeiXinRobot(object):
                 elif msg_type == 10002:  # 撤回消息
                     self._echo(u'%s: %s' % (fans_name, u'撤回了一条消息'), '\n')
                 else:
-                    self._echo(u'%s: 消息类型<%s>' % (fans_name, str(msg_type)), '\n')
+                    self._echo(u'%s: 消息类型<%s>, %s' % (fans_name, str(msg_type),content), '\n')
 
     def wx_sendmsg(self,content,ToUserName):
         id = int(time.time());
-        msg = {"Type": 1, "Content": content,"ClientMsgId":id,"FromUserName":self.User['UserName'],\
+        msg = {"Type": 1, "Content": content,"ClientMsgId":id,"FromUserName":self.User['UserName'], \
                "ToUserName":ToUserName,"LocalID":id}
         url = self.base_uri + '/webwxsendmsg'#cgi-bin/mmwebwx-bin
         params = {
@@ -405,7 +416,23 @@ class WeiXinRobot(object):
 
 
     def wx_sync_loop(self):
-        self._run(u'[*] 进入消息监听模式 ...', self.sync)
+        flag = self.sync();
+        if(flag):
+            self._echo(u'[*] 进入消息监听模式 ...')
+            t=threading.Thread(target=self.wx_sysnc_loop_threader, args='')
+            t.start()
+            t.join()
+        else:
+            print(u'微信机器人重新启动：\n***************************')
+            if os.path.exists(ROBOT_INFO_FILE):
+                os.remove(ROBOT_INFO_FILE)
+            if os.path.exists(ROBOT_COOKIE_FILE):
+                os.remove(ROBOT_COOKIE_FILE)
+            if os.path.exists(ROBOT_QRPIC_FILE):
+                os.remove(ROBOT_QRPIC_FILE)
+            self.main();
+
+    def wx_sysnc_loop_threader(self):
         while True:
             retcode, selector = self.sync_check(self.sync_host)
             if retcode == '0':
@@ -413,22 +440,27 @@ class WeiXinRobot(object):
                     time.sleep(1)
                 elif selector == '2':  # 有新消息
                     self.handle_message(self.wx_message_sync())
+            else:
+                print retcode
+                break;
+            time.sleep(1)
+        print(u'微信机器人重新启动：\n==+.+.==>+======+==.=.++=====')
+        if os.path.exists(ROBOT_INFO_FILE):
+            os.remove(ROBOT_INFO_FILE)
+        if os.path.exists(ROBOT_COOKIE_FILE):
+            os.remove(ROBOT_COOKIE_FILE)
+        if os.path.exists(ROBOT_QRPIC_FILE):
+            os.remove(ROBOT_QRPIC_FILE)
+        self.main();
+
 
     def __del__(self):
         del self.dbHelper
-        if os.path.exist(ROBOT_INFO_FILE):
-            os.remove(ROBOT_INFO_FILE)
-        if os.path.exist(ROBOT_COOKIE_FILE):
-            os.remove(ROBOT_COOKIE_FILE)
-        if os.path.exist(ROBOT_QRPIC_FILE):
-            os.remove(ROBOT_QRPIC_FILE)
 
     def main(self):
-        global ROBOT_COOKIE_FILE, ROBOT_INFO_FILE, DEFAULT_HEADERS
-        self._echo(u'微信机器人启动：\n')
+        global ROBOT_COOKIE_FILE, ROBOT_INFO_FILE, GET_DEFAULT_HEADERS , POST_DEFAULT_HEADERS
 
-        if 1==2:
-        # if os.path.exists(ROBOT_INFO_FILE):  # 从文件加载初始化信息
+        if os.path.exists(ROBOT_INFO_FILE):  # 从文件加载初始化信息
             with open(ROBOT_INFO_FILE) as fp:
                 json_data = json.loads(fp.read())
                 for field, value in json_data.items():
@@ -459,7 +491,8 @@ class WeiXinRobot(object):
 
 
 if __name__ == '__main__':
-    dbhp = MysqlDBHelper.MysqlDBHelper()
-    robot = WeiXinRobot(dbhp)
+    print(u'微信机器人启动：\n')
+    #dbhp = MysqlDBHelper.MysqlDBHelper()
+    #robot = WeiXinRobot(dbhp)
+    robot = WeiXinRobot(None)
     robot.main()
-    del robot
