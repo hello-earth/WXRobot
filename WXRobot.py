@@ -12,15 +12,16 @@ import os
 import sys
 import time
 import random
-import urllib,atexit
+import urllib
 import xml.dom.minidom
-from PIL import Image
 import httplib2,threading
+
 import MysqlDBHelper
 
 ROBOT_INFO_FILE = os.path.join(os.getcwd(), '.\\config\\robot.json')
 ROBOT_COOKIE_FILE = os.path.join(os.getcwd(), '.\\config\\cookie.txt')
 ROBOT_QRPIC_FILE = os.path.join(os.getcwd(), '.\\config\\qrcode.jpg')
+
 
 TIMEOUT = 50
 WX_URLS = {
@@ -70,8 +71,6 @@ def http_get(url):
     update_cookie(response)
     return content
 
-
-
 def get_icon(self, user_id):
     url = 'https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxgeticon?username=%s' % user_id
     content = http_get(url)
@@ -79,7 +78,6 @@ def get_icon(self, user_id):
     with open(tmp_fn, 'wb') as fp:
         fp.write(content)
     return tmp_fn
-
 
 class WeiXinRobot(object):
     def __init__(self,dbHelper):
@@ -141,26 +139,22 @@ class WeiXinRobot(object):
         content = http_get(WX_URLS['qrcode'] % self.uuid)
         with open(qr_code_path, 'wb') as f:
             f.write(content)
-        image = Image.open(qr_code_path)
-        image.show()
+
+        print "二维码已生成，请扫码"
         return True
 
     def wait_for_login(self, tip=1):
-        time.sleep(tip)
+        time.sleep(2)
         content = http_get(WX_URLS['login'] % (tip, self.uuid, str(time.time())))
         matches = re.search(r'window.code=(\d+);', content)
         code = int(matches.group(1))
-
         if code == 201:  # 手机扫描识别成功
             return True
-        if code == 200:  # 确认按钮点击成功
+        elif code == 200:  # 确认按钮点击成功
             matches = re.search(r'window.redirect_uri="(\S+?)";', content)
             self.redirect_uri = matches.group(1) + '&fun=new'
             self.base_uri = self.redirect_uri[:self.redirect_uri.rfind('/')]
             return True
-        if code == 408:
-            self._echo('[登陆超时] ')
-            return False
         self._echo('[登陆异常] ')
         return False
 
@@ -186,11 +180,15 @@ class WeiXinRobot(object):
     def wx_init(self):
         url = self.base_uri + '/webwxinit?pass_ticket=%s&skey=%s&r=%s' % (self.pass_ticket, self.skey, int(time.time()))
         content = http_post(url, {'BaseRequest': self.BaseRequest})
-        json_data = json.loads(content)
-        self.User = json_data['User']  # 我
-        self.SyncKey = json_data['SyncKey']
-        self.sync_key = '|'.join([str(item['Key']) + '_' + str(item['Val']) for item in self.SyncKey['List']])
-        return json_data['BaseResponse']['Ret'] == 0
+        try:
+            json_data = json.loads(content)
+            self.User = json_data['User']  # 我
+            self.SyncKey = json_data['SyncKey']
+            self.sync_key = '|'.join([str(item['Key']) + '_' + str(item['Val']) for item in self.SyncKey['List']])
+            return json_data['BaseResponse']['Ret'] == 0
+        except :
+            print content
+            return False
 
     def wx_notify(self):
         url = self.base_uri + '/webwxstatusnotify?lang=zh_CN&pass_ticket=%s' % self.pass_ticket
