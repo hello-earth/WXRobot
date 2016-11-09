@@ -1,0 +1,50 @@
+
+<!-- saved from url=(0021)http://qr.huakai.org/ -->
+<html lang="zh_CN"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"><style type="text/css">@charset "UTF-8";[ng\:cloak],[ng-cloak],[data-ng-cloak],[x-ng-cloak],.ng-cloak,.x-ng-cloak,.ng-hide{display:none !important;}ng\:form{display:block;}.ng-animate-block-transitions{transition:0s all!important;-webkit-transition:0s all!important;}.ng-hide-add-active,.ng-hide-remove{display:block!important;}</style>
+
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+    <title>微信机器人</title>
+    <link rel="shortcut icon" href="https://res.wx.qq.com/zh_CN/htmledition/v2/images/favicon31aa32.ico" type="image/x-icon">
+    <link rel="stylesheet" type="text/css" href="./base31aa32.css">
+</head>
+<body draggable="false" mm-action-track="" track-type="resize" ng-controller="appController" ng-class="{loaded:isLoaded,unlogin:isUnLogin}" ng-click="appClick($event)" class="ng-scope ng-isolate-scope unlogin">
+<canvas style="position:absolute;top:0;left:0;bottom:0;right:0;z-index:-1;width:100%;height:100%;" id="heroCanvas"></canvas>
+
+
+<!--BEGIN login-->
+<!-- ngIf: true --><div class="login ng-scope" ng-controller="loginController" ng-if="true">
+
+    <!--BEGIN logo-->
+    <div class="logo">
+        <i class="web_wechat_login_logo"></i>
+    </div>
+    <!--END logo-->
+    <!--BEGIN login_box-->
+    <div class="login_box">
+        <div class="qrcode" ng-class="{hide: isScan}">
+            <img class="img" mm-src="" mm-src-load="qrcodeLoad" mm-src-parallel="" mm-src-timeout="10" mm-src-retry-count="2" src="./qrcode.jpg">
+            <p class="sub_title">扫描二维码登录微信</p>
+            <p>time</p>
+            <div class="extension">
+                <div class="item">
+                    <i class="icon web_wechat_login_phone_icon"></i>
+                    <div class="cont">
+                        <h4 class="title">登录手机微信</h4>
+                        <p class="desc">
+                            手机上安装登录微信</p>
+                    </div>
+                </div>
+                <div class="item">
+                    <i class="icon web_wechat_login_scan_icon"></i>
+                    <div class="cont">
+                        <h4 class="title">进入“扫一扫”</h4>
+                        <p class="desc">从“发现”，进入“扫一扫”，扫码登录微信网页版</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+</div>
+</body>
+</html>

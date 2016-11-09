@@ -15,12 +15,13 @@ import random
 import urllib
 import xml.dom.minidom
 import httplib2,threading
-
-import MysqlDBHelper
+import MysqlDBHelper,FtpHelper
 
 ROBOT_INFO_FILE = os.path.join(os.getcwd(), '.\\config\\robot.json')
 ROBOT_COOKIE_FILE = os.path.join(os.getcwd(), '.\\config\\cookie.txt')
 ROBOT_QRPIC_FILE = os.path.join(os.getcwd(), '.\\config\\qrcode.jpg')
+ROBOT_QRHTML_FILE = os.path.join(os.getcwd(), './config/wechat.html')
+ROBOT_QRHTML_BAK_FILE = os.path.join(os.getcwd(), './config/wechat.html.bak')
 
 
 TIMEOUT = 50
@@ -55,6 +56,19 @@ def update_cookie(response):
         POST_DEFAULT_HEADERS['Cookie'] = cookie
         with open(ROBOT_COOKIE_FILE, 'wb') as fp:
             fp.write(GET_DEFAULT_HEADERS['Cookie'])
+
+def update_html():
+    now = time.strftime('%Y-%m-%d %H:%M:%S',time.localtime(time.time()))
+    content=""
+    with open(ROBOT_QRHTML_BAK_FILE, 'r') as fp:
+        content = fp.read().decode('u8')
+        fp.close()
+    content=content.replace('<p>time</p>',u'<p>更新于: %s</p>'%now)
+    with open(ROBOT_QRHTML_FILE, 'wb') as fp:
+        fp.write(content.encode("u8"))
+        fp.close()
+    FTP.upload_file(ROBOT_QRHTML_FILE,"/WEB/wechat.html")
+    FTP.upload_file(ROBOT_QRPIC_FILE, "/WEB/qrcode.jpg")
 
 
 def http_post(url, params):
@@ -378,7 +392,7 @@ class WeiXinRobot(object):
                     if(rpr and self.dbHelper):
                         sql = "insert into spd_wxprp(id,url,provider,usetimes,time) values(NULL,'%s','%s','0','%s')"%(rpr,fans_name,time.strftime('%Y-%m-%d %H:%M:%S',time.localtime(time.time())))
                         self.dbHelper.runSql(sql)
-                    self.wx_sendmsg(content,group_id)
+                    self.wx_sendmsg(u'浦发红包已记录',group_id)
                 elif msg_type == 3:  # 图片
                     self._echo(u'%s: %s' % (fans_name, u'图片'), '\n')
                 elif msg_type == 34:  # 语音
@@ -389,6 +403,9 @@ class WeiXinRobot(object):
                     self._echo(u'%s: %s' % (fans_name, u'表情'), '\n')
                 elif msg_type == 62:  # 视频
                     self._echo(u'%s: %s' % (fans_name, u'视频'), '\n')
+                elif msg_type == 10000:  # 红包
+                    self._echo(u'%s: %s' % (fans_name, u'收到红包'), '\n')
+                    self.wx_sendmsg(u"谢谢老板", group_id)
                 elif msg_type == 10002:  # 撤回消息
                     self._echo(u'%s: %s' % (fans_name, u'撤回了一条消息'), '\n')
                 else:
@@ -490,6 +507,8 @@ class WeiXinRobot(object):
 
 if __name__ == '__main__':
     print(u'微信机器人启动：\n')
+    FTP = FtpHelper.FTPHelper()
+
     #dbhp = MysqlDBHelper.MysqlDBHelper()
     #robot = WeiXinRobot(dbhp)
     robot = WeiXinRobot(None)
