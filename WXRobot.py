@@ -67,8 +67,8 @@ def update_html():
     with open(ROBOT_QRHTML_FILE, 'wb') as fp:
         fp.write(content.encode("u8"))
         fp.close()
-    FTP.upload_file(ROBOT_QRHTML_FILE,"/WEB/wechat.html")
-    FTP.upload_file(ROBOT_QRPIC_FILE, "/WEB/qrcode.jpg")
+    FTP.upload_file(ROBOT_QRHTML_FILE,"/WEB/wxrobot/wechat.html")
+    FTP.upload_file(ROBOT_QRPIC_FILE, "/WEB/wxrobot/qrcode.jpg")
 
 
 def http_post(url, params):
@@ -85,13 +85,6 @@ def http_get(url):
     update_cookie(response)
     return content
 
-def get_icon(self, user_id):
-    url = 'https://wx.qq.com/cgi-bin/mmwebwx-bin/webwxgeticon?username=%s' % user_id
-    content = http_get(url)
-    tmp_fn = 'img_%s.jpg' % user_id
-    with open(tmp_fn, 'wb') as fp:
-        fp.write(content)
-    return tmp_fn
 
 class WeiXinRobot(object):
     def __init__(self,dbHelper):
@@ -110,7 +103,8 @@ class WeiXinRobot(object):
         self.SyncKey = []
         self.sync_key = ''
         self.sync_host = ''
-
+        self.last_update_record=1.0
+        self.interval_update_record=60000
         self.group_list = []
         self.group_member_dict = {}
 
@@ -147,6 +141,14 @@ class WeiXinRobot(object):
             self.uuid = matches.group(2)
             return True
         return False
+
+    def get_headimg(self,url):
+        content = http_get(url)
+        print url
+        tmp_fn = 'img_robot.jpg'
+        with open(tmp_fn, 'wb') as fp:
+            fp.write(content)
+        return tmp_fn
 
     def gen_qr_code(self):
         qr_code_path = os.path.join(os.getcwd(), ROBOT_QRPIC_FILE)
@@ -194,11 +196,13 @@ class WeiXinRobot(object):
     def wx_init(self):
         url = self.base_uri + '/webwxinit?pass_ticket=%s&skey=%s&r=%s' % (self.pass_ticket, self.skey, int(time.time()))
         content = http_post(url, {'BaseRequest': self.BaseRequest})
+
         try:
             json_data = json.loads(content)
             self.User = json_data['User']  # 我
             self.SyncKey = json_data['SyncKey']
             self.sync_key = '|'.join([str(item['Key']) + '_' + str(item['Val']) for item in self.SyncKey['List']])
+            self.get_headimg("https://wx.qq.com" + self.User['HeadImgUrl'])
             return json_data['BaseResponse']['Ret'] == 0
         except :
             print content
@@ -290,6 +294,10 @@ class WeiXinRobot(object):
                 print 'session have expired.'
                 return '-1', '-1'
             else:
+                if (self.dbHelper):
+                    sql = "update  wxrobot_status set nickname='%s',status='%s',last_uptime='%s'" % (
+                    "Young", '0', time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time())))
+                    self.dbHelper.runSql(sql)
                 raise e
 
     def sync(self):
@@ -455,10 +463,18 @@ class WeiXinRobot(object):
                     time.sleep(1)
                 elif selector == '2':  # 有新消息
                     self.handle_message(self.wx_message_sync())
+                if (self.dbHelper and (time.time() - self.last_update_record > self.interval_update_record)):
+                    sql = "update  wxrobot_status set nickname='%s',status='%s',last_uptime='%s'" % (
+                    "Young", '1', time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time())))
+                    self.dbHelper.runSql(sql)
             else:
                 print retcode
                 break;
             time.sleep(1)
+        if (self.dbHelper):
+            sql = "update  wxrobot_status set nickname='%s',status='%s',last_uptime='%s'" % (
+            "Young", '0', time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time())))
+            self.dbHelper.runSql(sql)
         print(u'微信机器人重新启动：\n==+.+.==>+======+==.=.++=====')
         if os.path.exists(ROBOT_INFO_FILE):
             os.remove(ROBOT_INFO_FILE)
