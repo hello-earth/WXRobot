@@ -15,7 +15,7 @@ import random
 import urllib
 import xml.dom.minidom
 import httplib2,threading
-import MysqlDBHelper,FtpHelper
+import MysqlDBHelper,FtpHelper,WXChatApi
 
 ROBOT_INFO_FILE = os.path.join(os.getcwd(), '.\\config\\robot.json')
 ROBOT_COOKIE_FILE = os.path.join(os.getcwd(), '.\\config\\cookie.txt')
@@ -145,7 +145,7 @@ class WeiXinRobot(object):
     def get_headimg(self,url):
         content = http_get(url)
         print url
-        tmp_fn = 'img_robot.jpg'
+        tmp_fn = './config/img_robot.jpg'
         with open(tmp_fn, 'wb') as fp:
             fp.write(content)
         return tmp_fn
@@ -420,10 +420,11 @@ class WeiXinRobot(object):
                     self._echo(u'%s: 消息类型<%s>, %s' % (fans_name, str(msg_type),content), '\n')
 
     def wx_sendmsg(self,content,ToUserName):
+        content = WXChatApi().getAnswer(content)
         id = int(time.time());
         msg = {"Type": 1, "Content": content,"ClientMsgId":id,"FromUserName":self.User['UserName'], \
                "ToUserName":ToUserName,"LocalID":id}
-        url = self.base_uri + '/webwxsendmsg'#cgi-bin/mmwebwx-bin
+        url = self.base_uri + '/webwxsendmsg'
         params = {
             'BaseRequest': self.BaseRequest,
             'Msg': msg,
@@ -463,12 +464,14 @@ class WeiXinRobot(object):
                     time.sleep(1)
                 elif selector == '2':  # 有新消息
                     self.handle_message(self.wx_message_sync())
+                elif(time.time() - self.last_update_record > self.interval_update_record):
+                    break
                 if (self.dbHelper and (time.time() - self.last_update_record > self.interval_update_record)):
                     sql = "update  wxrobot_status set nickname='%s',status='%s',last_uptime='%s'" % (
                     "Young", '1', time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time())))
                     self.dbHelper.runSql(sql)
+                self.last_update_record = time.time()
             else:
-                print retcode
                 break;
             time.sleep(1)
         if (self.dbHelper):
@@ -486,7 +489,11 @@ class WeiXinRobot(object):
 
 
     def __del__(self):
-        del self.dbHelper
+        if (self.dbHelper):
+            sql = "update  wxrobot_status set nickname='%s',status='%s',last_uptime='%s'" % (
+            "Young", '0', time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time())))
+            self.dbHelper.runSql(sql)
+            del self.dbHelper
 
     def main(self):
         global ROBOT_COOKIE_FILE, ROBOT_INFO_FILE, GET_DEFAULT_HEADERS , POST_DEFAULT_HEADERS
