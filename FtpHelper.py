@@ -3,7 +3,7 @@ import ftplib
 class FTPHelper(object):
 
     def __init__(self):
-        self.session = ftplib.FTP('vhost163.cloudvhost.cn','webmaste','(*f')
+        self.session = ftplib.FTP('ip', 'username', 'passwd')
 
     def upload_file(self,spath,tpath):
         file = open(spath,'rb')
@@ -11,6 +11,7 @@ class FTPHelper(object):
         file.close()
 
     def __del__(self):
+        print 'delete ftp connect'
         self.session.quit()
 
 
